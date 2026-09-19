@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from PIL import Image
 import pygame
 import requests
 from bs4 import BeautifulSoup
@@ -25,6 +26,8 @@ from bs4 import BeautifulSoup
 #   + radar stays until every visible aircraft has blinked once
 #   + 1px Poznan-Lawica mosaic frame around the entire radar screen
 #   + focused aircraft uses 4x4 X-style blinking marker
+#   + --matrix output for a real 128x64 HUB75 panel
+#   + --matrix-test hardware colour/geometry test
 #
 # Keys:
 #   A = aircraft
@@ -45,7 +48,7 @@ from bs4 import BeautifulSoup
 # ============================================================
 
 
-VERSION = "0.24"
+VERSION = "0.25"
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
@@ -138,6 +141,16 @@ DEFAULT_CONFIG = {
         "scale": 7,
         "fps": 60,
         "show_grid": True
+    },
+    "matrix": {
+        "rows": 64,
+        "cols": 128,
+        "chain_length": 1,
+        "parallel": 1,
+        "hardware_mapping": "regular",
+        "gpio_slowdown": 4,
+        "brightness": 35,
+        "fps": 20
     },
     "location": {
         "name": "POZ",
@@ -646,13 +659,15 @@ def fetch_nearby_aircraft():
                     or ac_data.get("RegisteredOwners")
                     or ""
                 )
+                # Branding follows the live callsign first. This prevents a
+                # wet-lease/ACMI/owner record from replacing e.g. SAS with the
+                # registered operator returned by HexDB.
                 callsign_icao = airline_icao_from_callsign(callsign)
-
                 plane["icao"] = (
-                        callsign_icao
-                        or plane["icao"]
-                        or ac_data.get("OperatorFlagCode")
-                        or ""
+                    callsign_icao
+                    or plane["icao"]
+                    or ac_data.get("OperatorFlagCode")
+                    or ""
                 )
 
     # Re-check exclusions after enrichment as airline data may have
@@ -2270,7 +2285,7 @@ def render_radar(planes, weather, radar_elapsed_ms=0):
     # HOME: green diamond in the radar centre.
     draw_location_marker(buf, cx, cy, GREEN)
 
-    # POZ: blue diamond at its actual position.
+    # POZ: Poznan-Airport pink diamond at its actual position.
     px, py, airport_distance = project_to_radar(
         POZ_LAT, POZ_LON, cx, cy, radius_px, range_km
     )
@@ -2351,7 +2366,7 @@ def render_radar(planes, weather, radar_elapsed_ms=0):
             buf,
             flight_text[:9],
             68,
-            18,
+            17,
             flight_color
         )
     else:
@@ -2426,8 +2441,7 @@ def airline_color(icao):
         "UAE": RED,
         "QTR": (145, 70, 220),
         "DLH": YELLOW,
-        "KLM": (0, 159, 217),
-        "ASL": (220, 30, 50),
+        "KLM": CYAN
     }.get((icao or "").upper(), CYAN)
 
 
@@ -2639,6 +2653,164 @@ def draw_matrix(screen, buf, show_grid):
                 )
 
 
+
+# ============================================================
+# HUB75 OUTPUT
+# ============================================================
+
+def monotonic_ms():
+    """Monotonic clock shared by emulator and headless matrix mode."""
+    return int(time.monotonic() * 1000)
+
+
+def create_hub75_matrix(args):
+    """Create the physical HUB75 output only when --matrix is requested."""
+    try:
+        from rgbmatrix import RGBMatrix, RGBMatrixOptions
+    except ImportError as exc:
+        raise RuntimeError(
+            "rgbmatrix is not installed in this Python environment. "
+            "Install rpi-rgb-led-matrix into the FlightWall .venv first."
+        ) from exc
+
+    cfg = CONFIG.get("matrix", {})
+    options = RGBMatrixOptions()
+    options.rows = int(args.matrix_rows or cfg.get("rows", 64))
+    options.cols = int(args.matrix_cols or cfg.get("cols", 128))
+    options.chain_length = int(args.matrix_chain or cfg.get("chain_length", 1))
+    options.parallel = int(args.matrix_parallel or cfg.get("parallel", 1))
+    options.hardware_mapping = str(
+        args.gpio_mapping or cfg.get("hardware_mapping", "regular")
+    )
+    options.gpio_slowdown = int(
+        args.gpio_slowdown
+        if args.gpio_slowdown is not None
+        else cfg.get("gpio_slowdown", 4)
+    )
+    options.brightness = max(
+        1,
+        min(
+            100,
+            int(
+                args.brightness
+                if args.brightness is not None
+                else cfg.get("brightness", 35)
+            )
+        )
+    )
+
+    # FlightWall writes cache/debug files after matrix initialization.
+    # Keep the service's root privileges instead of allowing the library to
+    # drop to the daemon user, otherwise those writes can fail.
+    options.drop_privileges = False
+
+    matrix = RGBMatrix(options=options)
+
+    print(
+        "[MATRIX] initialized:",
+        f"{matrix.width}x{matrix.height}",
+        f"mapping={options.hardware_mapping}",
+        f"slowdown={options.gpio_slowdown}",
+        f"brightness={options.brightness}%",
+        flush=True
+    )
+
+    if matrix.width != MATRIX_W or matrix.height != MATRIX_H:
+        matrix.Clear()
+        raise RuntimeError(
+            f"Matrix geometry is {matrix.width}x{matrix.height}, but FlightWall "
+            f"renders {MATRIX_W}x{MATRIX_H}. Check rows/cols/chain/parallel."
+        )
+
+    return matrix, matrix.CreateFrameCanvas()
+
+
+def buffer_to_pil(buf):
+    """Convert the 128x64 logical framebuffer to an RGB Pillow image."""
+    image = Image.new("RGB", (MATRIX_W, MATRIX_H), (0, 0, 0))
+    pixels = []
+    for y in range(MATRIX_H):
+        for x in range(MATRIX_W):
+            # None means LED physically OFF. Do not use emulator LED_OFF gray.
+            pixels.append(buf[y][x] if buf[y][x] is not None else (0, 0, 0))
+    image.putdata(pixels)
+    return image
+
+
+def draw_hub75(matrix, canvas, buf):
+    """Copy one FlightWall framebuffer to the physical matrix, vsync-safe."""
+    canvas.SetImage(buffer_to_pil(buf))
+    return matrix.SwapOnVSync(canvas)
+
+
+def matrix_test_frame(kind):
+    """Create simple full-panel test frames without network access."""
+    buf = make_buffer()
+
+    if kind == "red":
+        color = (255, 0, 0)
+        for y in range(MATRIX_H):
+            for x in range(MATRIX_W):
+                set_pixel(buf, x, y, color)
+        return buf
+
+    if kind == "green":
+        color = (0, 255, 0)
+        for y in range(MATRIX_H):
+            for x in range(MATRIX_W):
+                set_pixel(buf, x, y, color)
+        return buf
+
+    if kind == "blue":
+        color = (0, 0, 255)
+        for y in range(MATRIX_H):
+            for x in range(MATRIX_W):
+                set_pixel(buf, x, y, color)
+        return buf
+
+    if kind == "white":
+        color = (255, 255, 255)
+        for y in range(MATRIX_H):
+            for x in range(MATRIX_W):
+                set_pixel(buf, x, y, color)
+        return buf
+
+    # Geometry/orientation frame: border, centre cross and corner labels.
+    draw_box(buf, 0, 0, MATRIX_W - 1, MATRIX_H - 1, WHITE)
+    draw_vline(buf, 0, MATRIX_H - 1, MATRIX_W // 2, (70, 70, 70))
+    draw_hline(buf, 0, MATRIX_W - 1, MATRIX_H // 2, (70, 70, 70))
+    draw_text(buf, "TL", 3, 3, RED)
+    draw_text(buf, "TR", 111, 3, GREEN)
+    draw_text(buf, "BL", 3, 54, BLUE)
+    draw_text(buf, "BR", 111, 54, YELLOW)
+    draw_centered(buf, "128X64", 27, CYAN)
+    return buf
+
+
+def run_matrix_test(matrix, canvas):
+    """Cycle primary colours then leave a geometry test visible."""
+    sequence = (
+        ("RED", "red", 1.5),
+        ("GREEN", "green", 1.5),
+        ("BLUE", "blue", 1.5),
+        ("WHITE", "white", 1.5),
+        ("GEOMETRY", "geometry", None),
+    )
+
+    try:
+        for label, kind, seconds in sequence:
+            print(f"[MATRIX TEST] {label}", flush=True)
+            canvas = draw_hub75(matrix, canvas, matrix_test_frame(kind))
+            if seconds is not None:
+                time.sleep(seconds)
+            else:
+                print("[MATRIX TEST] CTRL+C to exit.", flush=True)
+                while True:
+                    time.sleep(1)
+    finally:
+        matrix.Clear()
+
+
 # ============================================================
 # SCREEN CYCLE
 # ============================================================
@@ -2737,18 +2909,18 @@ def main():
     # This file is created BEFORE any network request/thread.
     # If it does not exist, this exact v0.7 file is not being executed.
     AIRPORT_DEBUG_PATH.write_text(
-        "FlightWall LIVE v0.24 started\n"
+        "FlightWall LIVE v0.25 started\n"
         f"Script: {Path(__file__).resolve()}\n"
         f"Time: {datetime.now(WARSAW_TZ).isoformat()}\n",
         encoding="utf-8"
     )
 
     print("=" * 60, flush=True)
-    print("FlightWall LIVE v0.24", flush=True)
+    print("FlightWall LIVE v0.25", flush=True)
     print(f"Running: {Path(__file__).resolve()}", flush=True)
     print(f"Debug:   {AIRPORT_DEBUG_PATH}", flush=True)
     print(f"Missing: {MISSING_LOGOS_PATH}", flush=True)
-    print("ADSB refresh: 30s + automatic 429 backoff", flush=True)
+    print(f"ADSB refresh: {CONFIG['refresh']['adsb_seconds']}s + automatic 429 backoff", flush=True)
     print("=" * 60, flush=True)
 
     parser = argparse.ArgumentParser()
@@ -2757,6 +2929,23 @@ def main():
         action="store_true",
         help="Use fake data instead of internet sources."
     )
+    parser.add_argument(
+        "--matrix",
+        action="store_true",
+        help="Render to the physical HUB75 matrix instead of a pygame window."
+    )
+    parser.add_argument(
+        "--matrix-test",
+        action="store_true",
+        help="Run the physical HUB75 colour/geometry test and exit on Ctrl+C."
+    )
+    parser.add_argument("--brightness", type=int, metavar="1-100")
+    parser.add_argument("--gpio-slowdown", type=int, metavar="N")
+    parser.add_argument("--gpio-mapping", metavar="NAME")
+    parser.add_argument("--matrix-rows", type=int, metavar="N")
+    parser.add_argument("--matrix-cols", type=int, metavar="N")
+    parser.add_argument("--matrix-chain", type=int, metavar="N")
+    parser.add_argument("--matrix-parallel", type=int, metavar="N")
     parser.add_argument(
         "--test-airport",
         action="store_true",
@@ -2881,22 +3070,33 @@ def main():
 
         return
 
-    pygame.init()
-    pygame.display.set_caption("FlightWall LIVE v0.24 - 128x64")
+    # Physical matrix mode is fully headless; pygame display/event handling is
+    # only initialized for the desktop emulator.
+    matrix_mode = bool(args.matrix or args.matrix_test)
+    screen = None
+    clock = None
+    hub75 = None
+    hub75_canvas = None
 
-    screen = pygame.display.set_mode(
-        (WINDOW_W, WINDOW_H)
-    )
-    clock = pygame.time.Clock()
+    if matrix_mode:
+        hub75, hub75_canvas = create_hub75_matrix(args)
+        if args.matrix_test:
+            run_matrix_test(hub75, hub75_canvas)
+            return
+    else:
+        pygame.init()
+        pygame.display.set_caption("FlightWall LIVE v0.25 - 128x64")
+        screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
+        clock = pygame.time.Clock()
 
     show_grid = bool(CONFIG["display"]["show_grid"])
     current_screen = "aircraft"
-    screen_started = pygame.time.get_ticks()
+    screen_started = monotonic_ms()
     aircraft_item_started = screen_started
     aircraft_index = 0
 
     # Radar is an overlay screen shown independently of the normal cycle.
-    last_radar_ms = pygame.time.get_ticks()
+    last_radar_ms = monotonic_ms()
     return_screen_after_radar = "aircraft"
 
     state = None
@@ -2960,7 +3160,7 @@ def main():
 
     try:
         while running:
-            now_ms = pygame.time.get_ticks()
+            now_ms = monotonic_ms()
 
             radar_every_ms = int(
                 CONFIG["radar"]["show_every_seconds"]
@@ -3005,61 +3205,62 @@ def main():
                     aircraft_index += 1
                     aircraft_item_started = now_ms
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
+            if not matrix_mode:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
                         running = False
 
-                    elif event.key == pygame.K_a:
-                        current_screen = "aircraft"
-                        screen_started = now_ms
-                        aircraft_item_started = now_ms
-                        aircraft_index = 0
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            running = False
 
-                    elif event.key == pygame.K_r:
-                        current_screen = "arrivals"
-                        screen_started = now_ms
-
-                    elif event.key == pygame.K_d:
-                        current_screen = "departures"
-                        screen_started = now_ms
-
-                    elif event.key == pygame.K_SPACE:
-                        if current_screen == "radar":
-                            current_screen = return_screen_after_radar
-                            screen_started = now_ms
-                        else:
-                            current_screen = next_screen(current_screen)
-                            screen_started = now_ms
-                            if current_screen == "aircraft":
-                                aircraft_index = 0
-                                aircraft_item_started = now_ms
-
-                    elif event.key == pygame.K_m:
-                        if current_screen != "radar":
-                            return_screen_after_radar = current_screen
-                        current_screen = "radar"
-                        screen_started = now_ms
-                        last_radar_ms = now_ms
-
-                    elif event.key == pygame.K_n:
-                        # Manual next aircraft without restarting the 60 s block.
-                        if current_screen != "aircraft":
+                        elif event.key == pygame.K_a:
                             current_screen = "aircraft"
                             screen_started = now_ms
-                        aircraft_index += 1
-                        aircraft_item_started = now_ms
+                            aircraft_item_started = now_ms
+                            aircraft_index = 0
 
-                    elif event.key == pygame.K_g:
-                        show_grid = not show_grid
+                        elif event.key == pygame.K_r:
+                            current_screen = "arrivals"
+                            screen_started = now_ms
 
-                    elif event.key == pygame.K_f and state:
-                        state.force_adsb.set()
-                        state.force_airport.set()
-                        state.force_weather.set()
+                        elif event.key == pygame.K_d:
+                            current_screen = "departures"
+                            screen_started = now_ms
+
+                        elif event.key == pygame.K_SPACE:
+                            if current_screen == "radar":
+                                current_screen = return_screen_after_radar
+                                screen_started = now_ms
+                            else:
+                                current_screen = next_screen(current_screen)
+                                screen_started = now_ms
+                                if current_screen == "aircraft":
+                                    aircraft_index = 0
+                                    aircraft_item_started = now_ms
+
+                        elif event.key == pygame.K_m:
+                            if current_screen != "radar":
+                                return_screen_after_radar = current_screen
+                            current_screen = "radar"
+                            screen_started = now_ms
+                            last_radar_ms = now_ms
+
+                        elif event.key == pygame.K_n:
+                            # Manual next aircraft without restarting the 60 s block.
+                            if current_screen != "aircraft":
+                                current_screen = "aircraft"
+                                screen_started = now_ms
+                            aircraft_index += 1
+                            aircraft_item_started = now_ms
+
+                        elif event.key == pygame.K_g:
+                            show_grid = not show_grid
+
+                        elif event.key == pygame.K_f and state:
+                            state.force_adsb.set()
+                            state.force_airport.set()
+                            state.force_weather.set()
 
             if args.demo:
                 snap = {
@@ -3142,9 +3343,14 @@ def main():
                     radar_elapsed_ms=(now_ms - screen_started)
                 )
 
-            draw_matrix(screen, frame, show_grid)
-            pygame.display.flip()
-            clock.tick(FPS)
+            if matrix_mode:
+                hub75_canvas = draw_hub75(hub75, hub75_canvas, frame)
+                matrix_fps = max(1, int(CONFIG.get("matrix", {}).get("fps", 20)))
+                time.sleep(1.0 / matrix_fps)
+            else:
+                draw_matrix(screen, frame, show_grid)
+                pygame.display.flip()
+                clock.tick(FPS)
 
     finally:
         if state:
@@ -3153,7 +3359,10 @@ def main():
             state.force_airport.set()
             state.force_weather.set()
 
-        pygame.quit()
+        if hub75 is not None:
+            hub75.Clear()
+        if not matrix_mode:
+            pygame.quit()
 
 
 if __name__ == "__main__":

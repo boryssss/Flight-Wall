@@ -1,0 +1,29 @@
+{
+  "display": {
+    "scale": 7,
+    "fps": 60,
+    "show_grid": true
+  },
+  "location": {
+    "name": "POZ",
+    "lat": 52.416123,
+    "lon": 16.637221,
+    "radius_nm": 40
+  },
+  "refresh": {
+    "adsb_seconds": 30,
+    "airport_seconds": 240,
+    "hexdb_timeout_seconds": 6,
+    "http_timeout_seconds": 12
+  },
+  "screens": {
+    "aircraft_seconds": 60,
+    "arrivals_seconds": 10,
+    "departures_seconds": 10,
+    "aircraft_rotate_seconds": 10
+  },
+  "aircraft": {
+    "max_candidates": 12,
+    "route_enrich_top": 12
+  }
+}

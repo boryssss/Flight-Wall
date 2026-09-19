@@ -14,3 +14,8 @@ if [ -f requirements.txt ]; then
 fi
 
 echo "=== Update complete ==="
+
+if systemctl is-enabled --quiet flightwall.service 2>/dev/null; then
+    echo "Restarting FlightWall..."
+    sudo systemctl restart flightwall.service
+fi

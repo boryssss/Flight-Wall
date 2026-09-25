@@ -662,12 +662,11 @@ def fetch_nearby_aircraft():
                 # Branding follows the live callsign first. This prevents a
                 # wet-lease/ACMI/owner record from replacing e.g. SAS with the
                 # registered operator returned by HexDB.
-                callsign_icao = airline_icao_from_callsign(callsign)
                 plane["icao"] = (
-                    callsign_icao
-                    or plane["icao"]
-                    or ac_data.get("OperatorFlagCode")
-                    or ""
+                        ac_data.get("OperatorFlagCode")
+                        or plane["icao"]
+                        or airline_icao_from_callsign(callsign)
+                        or ""
                 )
 
     # Re-check exclusions after enrichment as airline data may have
@@ -2560,7 +2559,7 @@ def render_aircraft(plane):
     )
 
     # HDG always right-aligned to the same edge as altitude.
-    hdg_text = "HDG" + fmt_heading(plane.get("heading"))
+    hdg_text = "HDG" + fmt_heading(plane.get("heading")) + "°"
     hdg_width = text_width(hdg_text)
     draw_text(
         buf,
@@ -2613,7 +2612,11 @@ def render_board(title, rows, accent, arrivals):
         elif ":" in status:
             status_color = ORANGE
 
-        draw_text(buf, status[:6], 91, y, status_color, spacing=0)
+        if status == "ON TIME":
+            draw_text(buf, "ON", 91, y, status_color, spacing=0)
+            draw_text(buf, "TIME", 102, y, status_color, spacing=0)
+        else:
+            draw_text(buf, status[:6], 91, y, status_color, spacing=0)
 
     draw_poz_mosaic_line(buf, 63, block_w=4, offset=1)
     return buf

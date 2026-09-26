@@ -552,6 +552,17 @@ def fetch_nearby_aircraft():
                 flush=True
             )
             continue
+        altitude = raw.get("alt_baro")
+        model = raw.get("t") or ""
+
+        if model is None or model == "":
+            print(
+                f"[ADSB FILTER] skipped no plane model"
+                f"callsign={callsign} reg={registration or '-'}",
+                flush=True
+            )
+            continue
+
 
         plane = {
             "callsign": callsign,
@@ -559,7 +570,7 @@ def fetch_nearby_aircraft():
             "lat": plat,
             "lon": plon,
             "distance_km": distance_km,
-            "alt": raw.get("alt_baro"),
+            "alt": altitude,
             "speed": raw.get("gs"),
             "heading": raw.get("track"),
             "vertical_speed": (

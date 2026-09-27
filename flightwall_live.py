@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
-
+from airlines import display_airline_name
 from PIL import Image
 import pygame
 import requests
@@ -2492,7 +2492,7 @@ def render_aircraft(plane):
     display_call = callsign[:10]
     draw_text(buf, display_call, 39, 6, WHITE, scale=2, spacing=1)
 
-    airline = (plane.get("airline") or icao or "").upper()
+    airline = display_airline_name(plane)
     draw_text(buf, airline[:14], 39, 21, GRAY)
 
     origin = plane.get("origin") or "???"

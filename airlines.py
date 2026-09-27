@@ -1,0 +1,30 @@
+AIRLINE_DISPLAY_NAMES = {
+    "RYR": "RYANAIR",
+    "RYS": "BUZZ",
+    "LOT": "LOT POLISH AIRLINES",
+    "WZZ": "WIZZ AIR",
+    "WMT": "WIZZ AIR",
+    "WUK": "WIZZ AIR",
+    "KLM": "KLM",
+    "DLH": "LUFTHANSA",
+    "SAS": "SAS",
+    "AUA": "AUSTRIAN",
+    "SWR": "SWISS",
+    "AFR": "AIR FRANCE",
+    "BAW": "BRITISH AIRWAYS",
+    "EZY": "EASYJET",
+    "EWG": "EUROWINGS",
+    "ENT": "ENTER AIR",
+    "QTR": "QATAR AIRWAYS",
+    "UAE": "EMIRATES",
+}
+
+def display_airline_name(plane):
+    """Return a consistent airline name for the FlightWall UI."""
+    icao = (plane.get("icao") or "").upper().strip()
+    airline = (plane.get("airline") or "").upper().strip()
+
+    if icao in AIRLINE_DISPLAY_NAMES:
+        return AIRLINE_DISPLAY_NAMES[icao]
+
+    return airline or icao

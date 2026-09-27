@@ -1,6 +1,8 @@
 AIRLINE_DISPLAY_NAMES = {
     "RYR": "RYANAIR",
-    "RYS": "BUZZ",
+    "RYS": "BUZZ BY RYANAIR",
+    "MAY": "MALTA AIR BY RYR",
+    "LDA": "LAUDA BY RYANAIR",
     "LOT": "LOT POLISH AIRLINES",
     "WZZ": "WIZZ AIR",
     "WMT": "WIZZ AIR",

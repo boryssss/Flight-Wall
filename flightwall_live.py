@@ -1743,6 +1743,7 @@ def draw_char(buf, ch, x, y, color, scale=1):
                         )
 
 
+
 def text_width(text, scale=1, spacing=1):
     if not text:
         return 0

@@ -607,6 +607,24 @@ def fetch_nearby_aircraft():
             origin, dest = route_to_iata(plane["route"])
             plane["origin"] = origin
             plane["destination"] = dest
+            # Coordinates of destination airport for ETA
+            route_parts = re.split(
+                r"[-–—\s]+",
+                (plane["route"] or "").strip().upper()
+            )
+
+            if len(route_parts) >= 2:
+                destination_icao = route_parts[-1]
+
+                dest_data = hexdb_get(
+                    "airport",
+                    destination_icao
+                )
+
+                if isinstance(dest_data, dict):
+                    plane["destination_lat"] = dest_data.get("latitude")
+                    plane["destination_lon"] = dest_data.get("longitude")
+
 
         # HexDB always has priority. Only when it did not give us a usable
         # route do we check today's official Poznan Airport board.
@@ -1934,7 +1952,37 @@ POZ_MOSAIC_COLORS = [
     (245, 0, 127),    # pink
     (244, 244, 244),  # white
 ]
+def calculate_eta(plane):
+    try:
+        lat = float(plane["lat"])
+        lon = float(plane["lon"])
 
+        dest_lat = float(plane["destination_lat"])
+        dest_lon = float(plane["destination_lon"])
+
+        speed_knots = float(plane["speed"])
+
+        if speed_knots < 50:
+            return ""
+
+        distance_km = haversine_km(
+            lat,
+            lon,
+            dest_lat,
+            dest_lon
+        )
+
+        distance_nm = distance_km / 1.852
+        hours_remaining = distance_nm / speed_knots
+
+        eta = datetime.now(WARSAW_TZ) + timedelta(
+            hours=hours_remaining
+        )
+
+        return eta.strftime("%H:%M")
+
+    except Exception:
+        return ""
 
 def draw_poz_mosaic_line(buf, y, block_w=4, offset=0):
     """
@@ -2512,12 +2560,24 @@ def render_aircraft(plane):
         scale=2,
         spacing=1
     )
+    eta_text = calculate_eta(plane)
 
-    draw_hline(buf, 46, 81, 35, top_accent)
-    set_pixel(buf, 81, 35, top_accent)
+    if eta_text:
+        eta_width = text_width(eta_text, spacing=0)
+
+        draw_text(
+            buf,
+            eta_text,
+            62 - eta_width // 2,
+            36,
+            GRAY,
+            spacing=0
+        )
+    draw_hline(buf, 46, 81, 33, top_accent)
+    set_pixel(buf, 81, 33, top_accent)
+    set_pixel(buf, 80, 32, top_accent)
     set_pixel(buf, 80, 34, top_accent)
-    set_pixel(buf, 80, 36, top_accent)
-    draw_arrow_right(buf, 60, 33, WHITE)
+    draw_arrow_right(buf, 60, 31, WHITE)
 
     draw_hline(buf, 2, 125, 44, GRAY)
 

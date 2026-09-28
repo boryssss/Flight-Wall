@@ -1,8 +1,8 @@
 AIRLINE_DISPLAY_NAMES = {
     "RYR": "RYANAIR",
-    "RYS": "BUZZ",
-    "MAY": "MALTA AIR",
-    "LDA": "LAUDA",
+    "RYS": "BUZZ BY RYANAIR",
+    "MAY": "MALTA AIR BY RYANAIR",
+    "LDA": "LAUDA BY RYANAIR",
     "LOT": "LOT POLISH AIRLINES",
     "WZZ": "WIZZ AIR",
     "WMT": "WIZZ AIR",
@@ -19,7 +19,7 @@ AIRLINE_DISPLAY_NAMES = {
     "ENT": "ENTER AIR",
     "QTR": "QATAR AIRWAYS",
     "UAE": "EMIRATES",
-    "BRX": "BRAATHENS-SAS",
+    "BRX": "BRAATHENS FOR SAS",
 }
 
 def display_airline_name(plane):

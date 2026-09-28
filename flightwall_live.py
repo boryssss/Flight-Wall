@@ -1774,6 +1774,62 @@ def draw_text(buf, text, x, y, color, scale=1, spacing=1):
         draw_char(buf, ch, cursor, y, color, scale)
         cursor += 5 * scale + spacing
 
+def draw_marquee_text(
+    buf,
+    text,
+    x1,
+    x2,
+    y,
+    color,
+    elapsed=0.0,
+    speed=6,
+    gap=12,
+    pause=1.5
+):
+    text = str(text)
+
+    width = text_width(text)
+    area_width = x2 - x1 + 1
+
+    # Jeśli się mieści -> stoi nieruchomo
+    if width <= area_width:
+        draw_text(buf, text, x1, y, color)
+        return
+
+    # Przez pierwsze 1.5 s pokazujemy początek nazwy
+    if elapsed < pause:
+        offset = 0
+    else:
+        offset = int(
+            (elapsed - pause) * speed
+        )
+
+    cycle_width = width + gap
+
+    offset %= cycle_width
+
+    temp = make_buffer()
+
+    draw_text(
+        temp,
+        text,
+        x1 - offset,
+        y,
+        color
+    )
+
+    draw_text(
+        temp,
+        text,
+        x1 - offset + cycle_width,
+        y,
+        color
+    )
+
+    for py in range(y, y + 7):
+        for px in range(x1, x2 + 1):
+            if temp[py][px] is not None:
+                buf[py][px] = temp[py][px]
 
 def draw_centered(buf, text, y, color, scale=1, spacing=1):
     width = text_width(text, scale, spacing)
@@ -2516,7 +2572,7 @@ def render_message(title, line1="", line2="", accent=CYAN):
     return buf
 
 
-def render_aircraft(plane):
+def render_aircraft(plane, marquee_elapsed=0.0):
     buf = make_buffer()
 
     icao = plane.get("icao") or airline_icao_from_callsign(
@@ -2541,8 +2597,19 @@ def render_aircraft(plane):
     draw_text(buf, display_call, 39, 6, WHITE, scale=2, spacing=1)
 
     airline = display_airline_name(plane)
-    draw_text(buf, airline[:14], 39, 21, GRAY)
 
+    draw_marquee_text(
+        buf,
+        airline,
+        39,
+        125,
+        21,
+        GRAY,
+        elapsed=marquee_elapsed,
+        speed=6,
+        gap=12,
+        pause=0.75
+    )
     origin = plane.get("origin") or "???"
     dest = plane.get("destination") or "???"
 
@@ -3378,19 +3445,30 @@ def main():
                 planes = snap["aircraft"]
 
                 if planes:
+                    # ALWAYS keep index inside current aircraft list
                     aircraft_index %= len(planes)
+
+                    marquee_elapsed = (
+                                              now_ms - aircraft_item_started
+                                      ) / 1000.0
+
                     frame = render_aircraft(
-                        planes[aircraft_index]
+                        planes[aircraft_index],
+                        marquee_elapsed
                     )
+
                 else:
                     message = (
                         "WAITING FOR ADSB"
                         if not snap["aircraft_error"]
                         else "ADSB ERROR"
                     )
+
                     frame = render_message(
                         message,
-                        "CHECK INTERNET" if snap["aircraft_error"] else "LOADING...",
+                        "CHECK INTERNET"
+                        if snap["aircraft_error"]
+                        else "LOADING...",
                         CONFIG["location"]["name"],
                         RED if snap["aircraft_error"] else CYAN
                     )

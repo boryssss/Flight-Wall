@@ -9,7 +9,7 @@ AIRLINE_DISPLAY_NAMES = {
     "WUK": "WIZZ AIR",
     "KLM": "KLM",
     "DLH": "LUFTHANSA",
-    "SAS": "SAS",
+    "SAS": "SAS - Scandinavian Airlines",
     "AUA": "AUSTRIAN",
     "SWR": "SWISS",
     "AFR": "AIR FRANCE",

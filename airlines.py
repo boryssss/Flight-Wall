@@ -19,7 +19,7 @@ AIRLINE_DISPLAY_NAMES = {
     "ENT": "ENTER AIR",
     "QTR": "QATAR AIRWAYS",
     "UAE": "EMIRATES",
-    "BRX": "BRAATHENS (SAS)",
+    "BRX": "BRAATHENS-SAS",
 }
 
 def display_airline_name(plane):

@@ -2608,7 +2608,7 @@ def render_aircraft(plane, marquee_elapsed=0.0):
         elapsed=marquee_elapsed,
         speed=6,
         gap=12,
-        pause=1
+        pause=1.5
     )
     origin = plane.get("origin") or "???"
     dest = plane.get("destination") or "???"

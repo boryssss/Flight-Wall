@@ -199,6 +199,11 @@ def draw_arrow_right(buf, x, y, color):
     for px, py in pixels:
         set_pixel(buf, x + px, y + py, color)
 
+def set_thick_pixel(buf, x, y, color, size=2):
+    for ox in range(size):
+        for oy in range(size):
+            set_pixel(buf, x + ox, y + oy, color)
+
 def deep_merge(a, b):
     out = dict(a)
     for k, v in b.items():
@@ -1831,6 +1836,83 @@ def draw_marquee_text(
             if temp[py][px] is not None:
                 buf[py][px] = temp[py][px]
 
+def draw_status_spinner(buf, mode, now_ms):
+    cx = 121
+    cy = 56
+
+    points = [
+        (0, -4),
+        (3, -3),
+        (4, 0),
+        (3, 3),
+        (0, 4),
+        (-3, 3),
+        (-4, 0),
+        (-3, -3),
+    ]
+
+    # LOADING -> rotating Poznan Airport colors
+    if mode == "loading":
+        phase = int(now_ms / 120) % len(points)
+
+        colors = [
+            (22, 110, 186),   # blue
+            (50, 186, 233),   # cyan
+            (244, 244, 244),  # white
+            (245, 0, 127),    # pink
+        ]
+
+        for i, (dx, dy) in enumerate(points):
+            color = colors[(i - phase) % len(colors)]
+
+            set_thick_pixel(
+                buf,
+                cx + dx,
+                cy + dy,
+                color,
+                size=2
+            )
+
+    # ERROR -> whole ring flashes red
+    elif mode == "error":
+        visible = int(now_ms / 400) % 2 == 0
+
+        if visible:
+            for dx, dy in points:
+                set_thick_pixel(
+                    buf,
+                    cx + dx,
+                    cy + dy,
+                    RED,
+                    size=2
+                )
+
+    # RATE LIMIT / warning -> orange flashing
+    elif mode == "warning":
+        visible = int(now_ms / 700) % 2 == 0
+        orange = (255, 140, 0)
+
+        if visible:
+            for dx, dy in points:
+                set_thick_pixel(
+                    buf,
+                    cx + dx,
+                    cy + dy,
+                    ORANGE,
+                    size=2
+                )
+
+    # Successful ADS-B fetch but currently no aircraft
+    elif mode == "empty":
+        for dx, dy in points:
+            set_pixel(
+                buf,
+                cx + dx,
+                cy + dy,
+                CYAN
+            )
+
+
 def draw_centered(buf, text, y, color, scale=1, spacing=1):
     width = text_width(text, scale, spacing)
     draw_text(
@@ -2571,6 +2653,17 @@ def render_message(title, line1="", line2="", accent=CYAN):
         draw_centered(buf, line2[:20], 43, GRAY)
     return buf
 
+
+def render_adsb_status(mode, now_ms):
+    buf = make_buffer()
+
+    draw_status_spinner(
+        buf,
+        mode,
+        now_ms
+    )
+
+    return buf
 
 def render_aircraft(plane, marquee_elapsed=0.0):
     buf = make_buffer()
@@ -3457,20 +3550,40 @@ def main():
                         marquee_elapsed
                     )
 
-                else:
-                    message = (
-                        "WAITING FOR ADSB"
-                        if not snap["aircraft_error"]
-                        else "ADSB ERROR"
-                    )
 
-                    frame = render_message(
-                        message,
-                        "CHECK INTERNET"
-                        if snap["aircraft_error"]
-                        else "LOADING...",
-                        CONFIG["location"]["name"],
-                        RED if snap["aircraft_error"] else CYAN
+
+                else:
+
+                    error = snap.get("aircraft_error", "")
+
+                    updated = snap.get("aircraft_updated")
+
+                    if error:
+
+                        if "RATE LIMIT" in error.upper():
+
+                            status_mode = "warning"
+
+                        else:
+
+                            status_mode = "error"
+
+
+                    elif updated is None:
+
+                        status_mode = "loading"
+
+
+                    else:
+
+                        status_mode = "empty"
+
+                    frame = render_adsb_status(
+
+                        status_mode,
+
+                        now_ms
+
                     )
 
             elif current_screen == "arrivals":

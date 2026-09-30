@@ -20,6 +20,7 @@ AIRLINE_DISPLAY_NAMES = {
     "QTR": "QATAR AIRWAYS",
     "UAE": "EMIRATES",
     "BRX": "BRAATHENS FOR SAS",
+    "HLF": "CENTRAL AIRLINES"
 }
 
 def display_airline_name(plane):

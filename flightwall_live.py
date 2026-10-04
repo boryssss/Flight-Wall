@@ -1904,13 +1904,53 @@ def draw_status_spinner(buf, mode, now_ms):
 
     # Successful ADS-B fetch but currently no aircraft
     elif mode == "empty":
-        for dx, dy in points:
-            set_pixel(
-                buf,
-                cx + dx,
-                cy + dy,
-                CYAN
+        cycle_ms = now_ms % 6000
+
+        # 0-3000 ms -> rotating POZ spinner
+        if cycle_ms < 3000:
+            phase = int(cycle_ms / 120) % len(points)
+
+            colors = [
+                (22, 110, 186),  # dark blue
+                (50, 186, 233),  # cyan
+                (244, 244, 244),  # white
+                (245, 0, 127),  # pink
+            ]
+
+            for i, (dx, dy) in enumerate(points):
+                color = colors[(i - phase) % len(colors)]
+
+                set_thick_pixel(
+                    buf,
+                    cx + dx,
+                    cy + dy,
+                    color,
+                    size=2
+                )
+
+        # 3000-4000 ms -> 3 cyan flashes
+        elif cycle_ms < 5000:
+            flash_phase = cycle_ms - 3000
+
+            visible = (
+                    0 <= flash_phase < 180
+                    or 360 <= flash_phase < 540
+                    or 720 <= flash_phase < 900
+                    or 1080 <= flash_phase < 1260
+                    or 1440 <= flash_phase < 1620
             )
+
+            if visible:
+                for dx, dy in points:
+                    set_thick_pixel(
+                        buf,
+                        cx + dx,
+                        cy + dy,
+                        YELLOW,
+                        size=2
+                    )
+
+        # 4000-5000 ms -> blank
 
 
 def draw_centered(buf, text, y, color, scale=1, spacing=1):

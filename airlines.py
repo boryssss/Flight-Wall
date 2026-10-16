@@ -22,7 +22,8 @@ AIRLINE_DISPLAY_NAMES = {
     "BRX": "BRAATHENS FOR SAS",
     "HLF": "CENTRAL AIRLINES",
     "LPR": "LOTNICZE POGOTOWIE RATUNKOWE",
-    "BCS": "DHL"
+    "BCS": "DHL",
+    "THY": "TURKISH AIRLINES"
 }
 
 def display_airline_name(plane):

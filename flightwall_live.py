@@ -3127,9 +3127,9 @@ DEMO_PLANES = [
         "lon": 16.70
     },
     {
-        "callsign": "BCS3947",
-        "icao": "bcs",
-        "airline": "BCS",
+        "callsign": "tay3947",
+        "icao": "tay",
+        "airline": "tay",
         "origin": "WAW",
         "destination": "POZ",
         "aircraft": "E195",

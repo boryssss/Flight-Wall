@@ -3111,9 +3111,9 @@ def screen_duration(screen_name):
 
 DEMO_PLANES = [
     {
-        "callsign": "RYR2336",
-        "icao": "RYR",
-        "airline": "RYANAIR",
+        "callsign": "LPR1",
+        "icao": "LPR",
+        "airline": "Lotnicze pogotowie",
         "origin": "POZ",
         "destination": "STN",
         "aircraft": "B38M",
@@ -3127,9 +3127,9 @@ DEMO_PLANES = [
         "lon": 16.70
     },
     {
-        "callsign": "LOT3947",
-        "icao": "LOT",
-        "airline": "LOT",
+        "callsign": "BCS3947",
+        "icao": "bcs",
+        "airline": "BCS",
         "origin": "WAW",
         "destination": "POZ",
         "aircraft": "E195",

@@ -83,6 +83,7 @@ CYAN = (70, 220, 255)
 GREEN = (80, 230, 120)
 GRAY = (145, 145, 155)
 ORANGE = (255, 160, 60)
+DEFAULT = (128, 128, 128)
 
 WARSAW_TZ = ZoneInfo("Europe/Warsaw")
 
@@ -2014,7 +2015,7 @@ def has_airline_logo(icao):
     return bool(icao) and (LOGO_DIR / f"{icao}.png").exists()
 
 
-def dominant_logo_color(icao, fallback=CYAN):
+def dominant_logo_color(icao, fallback=DEFAULT):
     """
     Return the dominant vivid color from the airline logo.
     Transparent pixels, near-black, near-white and neutral grays are ignored.

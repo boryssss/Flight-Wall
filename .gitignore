@@ -5,3 +5,7 @@ README.md
 missing_logos.json
 flightwall_live-demo.py
 /__pycache__
+flightwall_live_copy.py
+flightwall_live_demo.py
+map_poz.png
+map_poz_org.png

@@ -2760,7 +2760,7 @@ def airline_color(icao):
         "QTR": (145, 70, 220),
         "DLH": YELLOW,
         "KLM": CYAN
-    }.get((icao or "").upper(), CYAN)
+    }.get((icao or "").upper(), DEFAULT)
 
 
 def render_message(title, line1="", line2="", accent=CYAN):

@@ -237,6 +237,24 @@ WINDOW_W = MATRIX_W * SCALE
 WINDOW_H = MATRIX_H * SCALE
 
 HTTP_TIMEOUT = int(CONFIG["refresh"]["http_timeout_seconds"])
+ADSB_LOL_COOLDOWN_UNTIL = 0.0
+ADSB_LOL_COOLDOWN_SECONDS = 600
+ADSB_ACTIVE_SOURCE = None
+
+
+def log_adsb_source(source):
+    global ADSB_ACTIVE_SOURCE
+
+    if ADSB_ACTIVE_SOURCE != source:
+        print(f"[ADSB SOURCE] Using {source}", flush=True)
+        ADSB_ACTIVE_SOURCE = source
+
+
+def adsb_retry_after(response):
+    try:
+        return max(1, int(response.headers.get("Retry-After", 60)))
+    except (TypeError, ValueError):
+        return 60
 HEXDB_TIMEOUT = int(CONFIG["refresh"]["hexdb_timeout_seconds"])
 
 HOME_LAT = float(CONFIG["radar"]["home_lat"])
@@ -491,28 +509,77 @@ def route_to_iata(route_string):
 # ADSB.LOL
 # ============================================================
 
+
 def fetch_nearby_aircraft():
+    global ADSB_LOL_COOLDOWN_UNTIL
+
     lat = float(CONFIG["location"]["lat"])
     lon = float(CONFIG["location"]["lon"])
     radius_nm = float(CONFIG["location"]["radius_nm"])
 
-    url = f"https://api.adsb.lol/v2/point/{lat}/{lon}/{radius_nm}"
+    primary_url = (
+        f"https://api.adsb.lol/v2/point/"
+        f"{lat}/{lon}/{radius_nm}"
+    )
 
-    r = SESSION.get(url, timeout=HTTP_TIMEOUT)
+    fallback_url = (
+        f"https://opendata.adsb.fi/api/v3/lat/{lat}"
+        f"/lon/{lon}/dist/{radius_nm}"
+    )
 
-    if r.status_code == 429:
-        retry_after = r.headers.get("Retry-After")
-        try:
-            retry_after = int(retry_after)
-        except Exception:
-            retry_after = 60
+    # ADSB.lol is temporarily rate-limited:
+    # use ADSB.fi until its cooldown expires.
+    if time.monotonic() < ADSB_LOL_COOLDOWN_UNTIL:
+        r = SESSION.get(fallback_url, timeout=HTTP_TIMEOUT)
 
-        raise RuntimeError(
-            f"ADSB_RATE_LIMIT:{retry_after}"
-        )
+        if r.status_code == 429:
+            raise RuntimeError(
+                f"ADSB_RATE_LIMIT:{adsb_retry_after(r)}"
+            )
 
-    r.raise_for_status()
-    payload = r.json()
+        r.raise_for_status()
+        payload = r.json()
+        log_adsb_source("ADSB.fi")
+
+    else:
+        r = SESSION.get(primary_url, timeout=HTTP_TIMEOUT)
+
+        if r.status_code == 429:
+            retry_after = adsb_retry_after(r)
+
+            cooldown = max(
+                ADSB_LOL_COOLDOWN_SECONDS,
+                retry_after
+            )
+
+            ADSB_LOL_COOLDOWN_UNTIL = (
+                time.monotonic() + cooldown
+            )
+
+            print(
+                f"[ADSB 429] ADSB.lol rate limited; "
+                f"switching to ADSB.fi for {cooldown}s.",
+                flush=True
+            )
+
+            r = SESSION.get(fallback_url, timeout=HTTP_TIMEOUT)
+
+            if r.status_code == 429:
+                raise RuntimeError(
+                    f"ADSB_RATE_LIMIT:{adsb_retry_after(r)}"
+                )
+
+            r.raise_for_status()
+            payload = r.json()
+            log_adsb_source("ADSB.fi")
+
+        else:
+            r.raise_for_status()
+            payload = r.json()
+
+            ADSB_LOL_COOLDOWN_UNTIL = 0.0
+            log_adsb_source("ADSB.lol")
+
     raw_aircraft = payload.get("ac", [])
 
     planes = []

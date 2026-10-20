@@ -509,76 +509,89 @@ def route_to_iata(route_string):
 # ADSB.LOL
 # ============================================================
 
+ADSB_ACTIVE_SOURCE = None
+
+
+def log_adsb_source(source):
+    global ADSB_ACTIVE_SOURCE
+
+    if ADSB_ACTIVE_SOURCE != source:
+        print(f"[ADSB SOURCE] Using {source}", flush=True)
+        ADSB_ACTIVE_SOURCE = source
+
+
 
 def fetch_nearby_aircraft():
-    global ADSB_LOL_COOLDOWN_UNTIL
-
     lat = float(CONFIG["location"]["lat"])
     lon = float(CONFIG["location"]["lon"])
     radius_nm = float(CONFIG["location"]["radius_nm"])
 
-    primary_url = (
-        f"https://api.adsb.lol/v2/point/"
-        f"{lat}/{lon}/{radius_nm}"
-    )
+    sources = [
+        (
+            "ADSB.fi",
+            f"https://opendata.adsb.fi/api/v3/lat/{lat}/lon/{lon}/dist/{radius_nm}"
+        ),
+        (
+            "ADSB.lol",
+            f"https://api.adsb.lol/v2/point/{lat}/{lon}/{radius_nm}"
+        ),
+    ]
 
-    fallback_url = (
-        f"https://opendata.adsb.fi/api/v3/lat/{lat}"
-        f"/lon/{lon}/dist/{radius_nm}"
-    )
+    payload = None
+    errors = []
+    retry_after_values = []
 
-    # ADSB.lol is temporarily rate-limited:
-    # use ADSB.fi until its cooldown expires.
-    if time.monotonic() < ADSB_LOL_COOLDOWN_UNTIL:
-        r = SESSION.get(fallback_url, timeout=HTTP_TIMEOUT)
+    # Try ADSB.fi first, then ADSB.lol if needed.
+    for source, url in sources:
+        try:
+            r = SESSION.get(url, timeout=HTTP_TIMEOUT)
 
-        if r.status_code == 429:
-            raise RuntimeError(
-                f"ADSB_RATE_LIMIT:{adsb_retry_after(r)}"
+            if r.status_code == 429:
+                try:
+                    retry_after = int(r.headers.get("Retry-After", 60))
+                except (TypeError, ValueError):
+                    retry_after = 60
+
+                retry_after_values.append(retry_after)
+
+                print(
+                    f"[ADSB 429] {source} rate limited; "
+                    "trying next source.",
+                    flush=True
+                )
+                continue
+
+            r.raise_for_status()
+            candidate = r.json()
+
+            if (
+                not isinstance(candidate, dict)
+                or not isinstance(candidate.get("ac"), list)
+            ):
+                raise ValueError("Unexpected ADS-B response format")
+
+            payload = candidate
+            log_adsb_source(source)
+            break
+
+        except (requests.RequestException, ValueError) as exc:
+            errors.append(
+                f"{source}: {type(exc).__name__}: {exc}"
             )
-
-        r.raise_for_status()
-        payload = r.json()
-        log_adsb_source("ADSB.fi")
-
-    else:
-        r = SESSION.get(primary_url, timeout=HTTP_TIMEOUT)
-
-        if r.status_code == 429:
-            retry_after = adsb_retry_after(r)
-
-            cooldown = max(
-                ADSB_LOL_COOLDOWN_SECONDS,
-                retry_after
-            )
-
-            ADSB_LOL_COOLDOWN_UNTIL = (
-                time.monotonic() + cooldown
-            )
-
             print(
-                f"[ADSB 429] ADSB.lol rate limited; "
-                f"switching to ADSB.fi for {cooldown}s.",
+                f"[ADSB ERROR] {source}: {type(exc).__name__}: {exc}",
                 flush=True
             )
 
-            r = SESSION.get(fallback_url, timeout=HTTP_TIMEOUT)
+    if payload is None:
+        if retry_after_values:
+            raise RuntimeError(
+                f"ADSB_RATE_LIMIT:{max(retry_after_values)}"
+            )
 
-            if r.status_code == 429:
-                raise RuntimeError(
-                    f"ADSB_RATE_LIMIT:{adsb_retry_after(r)}"
-                )
-
-            r.raise_for_status()
-            payload = r.json()
-            log_adsb_source("ADSB.fi")
-
-        else:
-            r.raise_for_status()
-            payload = r.json()
-
-            ADSB_LOL_COOLDOWN_UNTIL = 0.0
-            log_adsb_source("ADSB.lol")
+        raise RuntimeError(
+            "ADSB_SOURCES_FAILED: " + " | ".join(errors)
+        )
 
     raw_aircraft = payload.get("ac", [])
 

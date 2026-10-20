@@ -23,7 +23,8 @@ AIRLINE_DISPLAY_NAMES = {
     "HLF": "CENTRAL AIRLINES",
     "LPR": "LOTNICZE POGOTOWIE RATUNKOWE",
     "BCS": "DHL",
-    "THY": "TURKISH AIRLINES"
+    "THY": "TURKISH AIRLINES",
+    "UPS": "UNITED PARCEL SERVICE"
 }
 
 def display_airline_name(plane):

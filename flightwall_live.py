@@ -84,6 +84,7 @@ GREEN = (80, 230, 120)
 GRAY = (145, 145, 155)
 ORANGE = (255, 160, 60)
 DEFAULT = (128, 128, 128)
+GROUND = (0, 100, 0)
 
 WARSAW_TZ = ZoneInfo("Europe/Warsaw")
 
@@ -2887,8 +2888,10 @@ def render_aircraft(plane, marquee_elapsed=0.0):
         alt_color = RED
     elif vs > 100:
         alt_color = GREEN
+    elif isinstance(alt_text, str) and alt_text.strip().lower() == "ground":
+        alt_color = GROUND
     else:
-        alt_color = CYAN
+        alt_color = BLUE
 
     draw_text(
         buf,

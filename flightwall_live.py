@@ -84,7 +84,7 @@ GREEN = (80, 230, 120)
 GRAY = (145, 145, 155)
 ORANGE = (255, 160, 60)
 DEFAULT = (128, 128, 128)
-GROUND = (0, 100, 0)
+GROUND = (255, 165, 0)
 
 WARSAW_TZ = ZoneInfo("Europe/Warsaw")
 
